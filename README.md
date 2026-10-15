@@ -1,6 +1,6 @@
 # Meshtastic Mazowsze — CYD Field Tester
 
-The application is designed for a setup consisting of a Heltec Tracker V1.1 radio and an inexpensive ESP32-2432S028 display (available from Chinese retailers for approximately 35 PLN).
+The application is designed for a setup consisting of a Heltec Tracker V1.1 radio and an inexpensive ESP32-2432S028 display (available from Chinese retailers for approximately 35 PLN - less than 10$).
 
 A wiring diagram for the boards can be found in the .SVG file.
 
