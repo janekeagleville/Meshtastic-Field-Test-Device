@@ -13,6 +13,11 @@ The Tracker keeps standard Meshtastic firmware and GPS; the CYD is an API client
 
 Case for 3D print https://makerworld.com/pl/models/3030722-internet-connection-monitor-24h#profileId-3406236
 
+Screens
+https://zapodaj.net/plik-qDZE2JrpzA
+https://zapodaj.net/plik-vt0ugeca8Z
+https://zapodaj.net/plik-S9y9H4pFzt
+
 ## Features
 
 - Splash screen LoRaWAN / FIELD TEST KIT (include/splash.h, RGB565 320x240) and a consistent dark-green interface: header, GPS bar, panels, RSSI gauge, hop dots, chart.
