@@ -11,7 +11,7 @@ The map covers the Masovian Voivodeship (Mazowsze), including Warsaw and its sur
 Firmware for the CYD ESP32-2432S028 connected over UART to a Heltec Wireless Tracker.
 The Tracker keeps standard Meshtastic firmware and GPS; the CYD is an API client and a measurement display.
 
-
+Case for 3D print https://makerworld.com/pl/models/3030722-internet-connection-monitor-24h#profileId-3406236
 
 ## Features
 
