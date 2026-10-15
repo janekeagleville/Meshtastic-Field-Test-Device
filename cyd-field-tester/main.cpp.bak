@@ -1,0 +1,84 @@
+#include <Arduino.h>
+#include <SPI.h>
+#include <TFT_eSPI.h>
+#include <SD.h>
+#include <Preferences.h>
+#include <math.h>
+#include "config.h"
+#include "protocol.h"
+#include "logo.h"
+
+TFT_eSPI tft; HardwareSerial radio(2); mesh::Framer framing;
+struct Node {uint32_t id=0,last=0,count=0;char name[25]={};int rssi=0;float snr=0;int lo=0,hi=0;double sum=0;int16_t hist[HISTORY]={};unsigned used=0,head=0;bool mqtt=false;int hops=-1;};
+Node nodes[MAX_NODES];uint32_t myId=0,configId=0,lastFrame=0,lastRequest=0,lastHeartbeat=0,lastDraw=0,lastFlush=0;
+bool configured=false,everFrame=false,logging=false,sdReady=false,detail=false;unsigned page=0;int selected=-1;
+File csv;char logPath[32]={};uint32_t written=0,parseErrors=0,logErrors=0;mesh::Position ownPosition;bool ownPositionLive=false;uint32_t positionAt=0;
+Preferences prefs;uint16_t calX0=300,calX1=3800,calY0=300,calY1=3800;bool calSwap=true;
+Node* node(uint32_t id){if(!id)return nullptr;for(auto &n:nodes)if(n.id==id)return &n;for(auto &n:nodes)if(!n.id){n=Node{};n.id=id;return &n;}Node* oldest=&nodes[0];for(auto &n:nodes)if(uint32_t(millis()-n.last)>uint32_t(millis()-oldest->last))oldest=&n;*oldest=Node{};oldest->id=id;return oldest;}
+void user(Node* n,const uint8_t* p,size_t len){if(!n)return;mesh::Reader r(p,len);mesh::Field f;char name[25]={},shortName[9]={};while(r.next(f)){if(f.tag==2&&f.wire==2)mesh::copyText(name,sizeof(name),f);if(f.tag==3&&f.wire==2)mesh::copyText(shortName,sizeof(shortName),f);}if(r.ok()){if(name[0])strlcpy(n->name,name,sizeof(n->name));else if(shortName[0])strlcpy(n->name,shortName,sizeof(n->name));}}
+void updatePosition(const uint8_t* p,size_t len,bool live){mesh::Position pos;if(mesh::position(p,len,pos)&&pos.valid()){ownPosition=pos;positionAt=millis();ownPositionLive=live;}}
+void nodeInfo(const uint8_t* p,size_t len){mesh::Reader r(p,len);mesh::Field f;uint32_t id=0;const uint8_t *u=nullptr,*pos=nullptr;size_t ul=0,pl=0;while(r.next(f)){if(f.tag==1&&f.wire==0)id=f.value;if(f.tag==2&&f.wire==2){u=f.bytes;ul=f.size;}if(f.tag==3&&f.wire==2){pos=f.bytes;pl=f.size;}}if(!r.ok()){++parseErrors;return;}Node* n=node(id);if(u)user(n,u,ul);if(id==myId&&pos)updatePosition(pos,pl,configured);}
+void logPacket(const mesh::Packet& p,const Node& n){if(!logging||!csv)return;char lat[24]="",lon[24]="",age[24]="";bool valid=ownPosition.valid();if(valid){snprintf(lat,sizeof(lat),"%.7f",ownPosition.lat*1e-7);snprintf(lon,sizeof(lon),"%.7f",ownPosition.lon*1e-7);snprintf(age,sizeof(age),"%lu",(unsigned long)((millis()-positionAt)/1000));}
+ // GPS coordinates belong to the local Tracker, never the remote sender.
+ char gpsAge[24]="";if(valid&&ownPosition.epoch&&p.epoch>=ownPosition.epoch)snprintf(gpsAge,sizeof(gpsAge),"%lu",(unsigned long)(p.epoch-ownPosition.epoch));
+ size_t bytes=csv.printf("%lu,%lu,%08lx,%08lx,%d,%.2f,%d,%u,%u,%u,%s,%s,%s,%u,%u,%lu,%s\n",(unsigned long)millis(),(unsigned long)p.epoch,(unsigned long)p.from,(unsigned long)p.id,p.rssi,p.snr,n.hops,p.relay,p.mqtt,p.transport,lat,lon,age,valid&&ownPositionLive,valid?ownPosition.source:0,(unsigned long)(valid?ownPosition.epoch:0),gpsAge);
+ if(!bytes||csv.getWriteError()){++logErrors;logging=false;csv.close();}else ++written;}
+void packet(const uint8_t* p,size_t len){mesh::Packet m;if(!mesh::packet(p,len,m)){++parseErrors;return;}
+ if(m.from==myId){if(m.port==3&&m.payload)updatePosition(m.payload,m.payloadSize,true);return;}
+ if(m.port==4&&m.payload)user(node(m.from),m.payload,m.payloadSize);
+ // Exclude local transmissions, replay without RSSI and MQTT ingress.
+ if(!m.hasRssi||m.mqtt||m.transport>4||!m.from||!isfinite(m.snr)||m.rssi < -200||m.rssi>20)return;
+ Node* n=node(m.from);if(!n)return;n->last=millis();n->rssi=m.rssi;n->snr=m.snr;n->mqtt=m.mqtt;
+ // Nonzero initial hop count can be interpreted; zero is ambiguous on old firmware.
+ n->hops=m.hasHopStart&&m.hopStart>0&&m.hopStart>=m.hopLimit?int(m.hopStart-m.hopLimit):-1;
+ if(!n->count)n->lo=n->hi=m.rssi;n->lo=min(n->lo,int(m.rssi));n->hi=max(n->hi,int(m.rssi));++n->count;n->sum+=m.rssi;
+ n->hist[n->head]=m.rssi;n->head=(n->head+1)%HISTORY;n->used=min(n->used+1,HISTORY);logPacket(m,*n);
+}
+void fromRadio(const uint8_t* p,size_t len){mesh::Reader r(p,len);mesh::Field f;
+ // Validate whole envelope before interpreting any nested data.
+ while(r.next(f)){}if(!r.ok()){++parseErrors;return;}
+ lastFrame=millis();everFrame=true;mesh::Reader data(p,len);while(data.next(f)){
+ if(f.tag==2&&f.wire==2)packet(f.bytes,f.size);
+ if(f.tag==3&&f.wire==2){mesh::Reader info(f.bytes,f.size);mesh::Field a;uint32_t id=0;while(info.next(a))if(a.tag==1&&a.wire==0)id=a.value;if(info.ok()&&id){if(myId&&myId!=id){ownPosition=mesh::Position{};ownPositionLive=false;}myId=id;}}
+ if(f.tag==4&&f.wire==2)nodeInfo(f.bytes,f.size);
+ if(f.tag==7&&f.wire==0&&f.value==configId)configured=true;
+ if(f.tag==8&&f.wire==0&&f.value){configured=false;ownPositionLive=false;ownPosition=mesh::Position{};lastRequest=0;}
+}}
+void sendFrame(const uint8_t* p,size_t len){uint8_t head[]={0x94,0xc3,uint8_t(len>>8),uint8_t(len)};radio.write(head,4);radio.write(p,len);}
+void requestConfig(){configId=esp_random();if(!configId)configId=1;uint8_t p[6];size_t len=0;p[len++]=0x18;uint32_t v=configId;do{p[len++]=(v&127)|(v>127?128:0);v>>=7;}while(v);sendFrame(p,len);lastRequest=millis();}
+void toggleLog(){if(logging){csv.flush();csv.close();logging=false;return;}if(!sdReady){sdReady=SD.begin(SD_CS,SPI,10000000);if(!sdReady){++logErrors;return;}}
+ for(unsigned i=1;i<10000;i++){snprintf(logPath,sizeof(logPath),"/field_%04u.csv",i);if(!SD.exists(logPath)){csv=SD.open(logPath,FILE_WRITE);break;}}
+ if(!csv){++logErrors;return;}csv.clearWriteError();csv.println("uptime_ms,rx_epoch,sender_id,packet_id,rssi_dbm,snr_db,hops,relay_low_byte,via_mqtt,transport,tracker_lat,tracker_lon,position_receipt_age_s,position_live,position_source,position_epoch,gps_age_s");if(csv.getWriteError()){++logErrors;csv.close();return;}logging=true;written=0;lastFlush=millis();}
+// Bit-banged XPT2046 uses its own pins, leaving TFT HSPI and SD VSPI independent.
+uint16_t touchADC(uint8_t cmd){digitalWrite(TOUCH_CS,LOW);for(int b=7;b>=0;b--){digitalWrite(TOUCH_MOSI,(cmd>>b)&1);digitalWrite(TOUCH_CLK,HIGH);delayMicroseconds(2);digitalWrite(TOUCH_CLK,LOW);}delayMicroseconds(8);uint16_t v=0;for(int b=0;b<16;b++){digitalWrite(TOUCH_CLK,HIGH);delayMicroseconds(2);v=(v<<1)|digitalRead(TOUCH_MISO);digitalWrite(TOUCH_CLK,LOW);}digitalWrite(TOUCH_CS,HIGH);return (v>>3)&4095;}
+bool rawTouch(uint16_t& x,uint16_t& y){uint16_t z=touchADC(0xb0);if(z<150)return false;uint32_t a=0,b=0;for(int i=0;i<5;i++){a+=touchADC(0xd0);b+=touchADC(0x90);}x=a/5;y=b/5;return x>50&&x<4050&&y>50&&y<4050;}
+bool touch(int& x,int& y){uint16_t a,b;if(!rawTouch(a,b))return false;int u=calSwap?b:a,v=calSwap?a:b;x=constrain(map(u,calX0,calX1,0,319),0L,319L);y=constrain(map(v,calY0,calY1,0,239),0L,239L);return true;}
+void calibrate(){uint16_t xs[4],ys[4];const int cx[]={25,295,295,25},cy[]={25,25,215,215};
+ for(int i=0;i<4;i++){tft.fillScreen(TFT_BLACK);tft.setTextColor(TFT_WHITE,TFT_BLACK);tft.drawString("Dotknij krzyzyka",80,100,2);tft.drawLine(cx[i]-10,cy[i],cx[i]+10,cy[i],TFT_YELLOW);tft.drawLine(cx[i],cy[i]-10,cx[i],cy[i]+10,TFT_YELLOW);uint16_t a,b;while(rawTouch(a,b)){delay(10);}while(!rawTouch(a,b)){while(radio.available())framing.feed(radio.read(),millis(),fromRadio);delay(5);}xs[i]=a;ys[i]=b;delay(250);}
+ calSwap=abs(int(ys[1])-int(ys[0]))>abs(int(xs[1])-int(xs[0]));int lx=calSwap?(ys[0]+ys[3])/2:(xs[0]+xs[3])/2;int rx=calSwap?(ys[1]+ys[2])/2:(xs[1]+xs[2])/2;int ty=calSwap?(xs[0]+xs[1])/2:(ys[0]+ys[1])/2;int by=calSwap?(xs[2]+xs[3])/2:(ys[2]+ys[3])/2;
+ calX0=constrain(lx-(rx-lx)*25/270,0,4095);calX1=constrain(lx+(rx-lx)*294/270,0,4095);calY0=constrain(ty-(by-ty)*25/190,0,4095);calY1=constrain(ty+(by-ty)*214/190,0,4095);
+ if(abs(int(calX1)-int(calX0))<200||abs(int(calY1)-int(calY0))<200){calX0=calY0=300;calX1=calY1=3800;return;}
+ prefs.putUShort("x0",calX0);prefs.putUShort("x1",calX1);prefs.putUShort("y0",calY0);prefs.putUShort("y1",calY1);prefs.putBool("swap",calSwap);prefs.putBool("valid",true);
+}
+unsigned order[MAX_NODES],orderCount=0;void sortNodes(){orderCount=0;for(unsigned i=0;i<MAX_NODES;i++)if(nodes[i].count)order[orderCount++]=i;for(unsigned i=1;i<orderCount;i++){unsigned v=order[i],j=i;while(j&&uint32_t(millis()-nodes[v].last)<uint32_t(millis()-nodes[order[j-1]].last)){order[j]=order[j-1];--j;}order[j]=v;}if(page*5>=orderCount)page=0;}
+void label(int x,int y,const String& s,uint16_t color=TFT_WHITE,int font=2){tft.setTextColor(color,TFT_BLACK);tft.drawString(s,x,y,font);}
+void logo(int x,int y,const uint16_t* data,unsigned w,unsigned h){uint16_t row[180];tft.setSwapBytes(true);for(unsigned j=0;j<h;j++){for(unsigned i=0;i<w;i++)row[i]=pgm_read_word(data+j*w+i);tft.pushImage(x,y+j,w,1,row);}}
+void draw(){tft.fillScreen(TFT_BLACK);bool alive=everFrame&&(millis()-lastFrame<90000);logo(3,0,logoSmall,logoSmallW,logoSmallH);label(30,3,"MAZOWSZE FIELD",TFT_CYAN);label(226,3,configured?(alive?"API OK":"API ?"):"LACZENIE",alive?TFT_GREEN:TFT_ORANGE);
+ if(ownPosition.valid())label(6,24,String(ownPosition.lat*1e-7,5)+", "+String(ownPosition.lon*1e-7,5)+"  "+String((millis()-positionAt)/1000)+"s"+(ownPositionLive?"":" CACHE"),ownPositionLive?TFT_GREEN:TFT_ORANGE);else label(6,24,"GPS: brak pozycji Trackera",TFT_ORANGE);
+ tft.drawFastHLine(0,46,320,TFT_DARKGREY);
+ if(detail&&selected>=0&&nodes[selected].count){Node &n=nodes[selected];char id[16];snprintf(id,sizeof(id),"!%08lx",(unsigned long)n.id);label(6,50,n.name[0]?String(n.name):String(id));label(190,50,id,TFT_LIGHTGREY);label(6,73,String(n.rssi)+" dBm",TFT_GREEN,4);label(165,73,String(n.snr,1)+" dB",TFT_CYAN,4);label(6,104,"N="+String(n.count)+" min="+String(n.lo)+" max="+String(n.hi)+" avg="+String(n.sum/n.count,1));label(6,126,n.hops<0?"Droga nieustalona":n.hops==0?"Odbior bezposredni":"Przekazany: "+String(n.hops)+" hop");
+ label(6,146,"RSSI ostatnich "+String(n.used)+" pakietow",TFT_LIGHTGREY);tft.drawRect(30,166,282,42,TFT_DARKGREY);for(unsigned i=1;i<n.used;i++){unsigned start=(n.head+HISTORY-n.used)%HISTORY;int a=constrain(int(n.hist[(start+i-1)%HISTORY]),-140,-40),b=constrain(int(n.hist[(start+i)%HISTORY]),-140,-40);int x0=31+(i-1)*279/(HISTORY-1),x1=31+i*279/(HISTORY-1);tft.drawLine(x0,206-(a+140)*39/100,x1,206-(b+140)*39/100,TFT_GREEN);}}
+ else{sortNodes();label(6,49,"NADAWCA",TFT_LIGHTGREY);label(138,49,"RSSI",TFT_LIGHTGREY);label(195,49,"SNR",TFT_LIGHTGREY);label(257,49,"WIEK",TFT_LIGHTGREY);for(unsigned i=0;i<5&&page*5+i<orderCount;i++){Node &n=nodes[order[page*5+i]];char id[16];snprintf(id,sizeof(id),"!%08lx",(unsigned long)n.id);int y=72+i*27;String name=n.name[0]?String(n.name):String(id);label(6,y,name.substring(0,14));label(138,y,String(n.rssi),TFT_GREEN);label(195,y,String(n.snr,1),TFT_CYAN);label(257,y,String((millis()-n.last)/1000)+"s");}if(!orderCount){label(6,91,"Czekam na odebrane pakiety...");label(6,119,"Tracker: Serial PROTO, 115200");label(6,146,"TX=6 RX=7; CYD RX=35 TX=27");}}
+ tft.fillRect(0,214,320,26,TFT_DARKGREY);tft.setTextColor(TFT_WHITE,TFT_DARKGREY);tft.drawString(detail?"LISTA":"DALEJ",8,218,2);tft.drawString(logging?String("STOP ")+String(written):logErrors?"BLAD SD":sdReady?"START CSV":"BRAK SD",112,218,2);tft.drawString("KAL",265,218,2);
+ Serial.printf("API=%d nodes=%u csv=%lu frame_errors=%u parse_errors=%lu log_errors=%lu\n",configured,orderCount,(unsigned long)written,framing.errors,(unsigned long)parseErrors,(unsigned long)logErrors);
+}
+void setup(){Serial.begin(115200);pinMode(BACKLIGHT,OUTPUT);digitalWrite(BACKLIGHT,HIGH);pinMode(TOUCH_CS,OUTPUT);digitalWrite(TOUCH_CS,HIGH);pinMode(TOUCH_CLK,OUTPUT);digitalWrite(TOUCH_CLK,LOW);pinMode(TOUCH_MOSI,OUTPUT);pinMode(TOUCH_MISO,INPUT);pinMode(0,INPUT_PULLUP);
+ radio.setRxBufferSize(4096);radio.begin(RADIO_BAUD,SERIAL_8N1,RADIO_RX,RADIO_TX);tft.init();tft.setRotation(1);tft.fillScreen(TFT_WHITE);logo((320-logoLargeW)/2,10,logoLarge,logoLargeW,logoLargeH);tft.setTextColor(TFT_BLACK,TFT_WHITE);tft.drawCentreString("FIELD TESTER",160,198,4);delay(1500);prefs.begin("touch",false);calX0=prefs.getUShort("x0",300);calX1=prefs.getUShort("x1",3800);calY0=prefs.getUShort("y0",300);calY1=prefs.getUShort("y1",3800);calSwap=prefs.getBool("swap",true);
+ SPI.begin(18,19,23,SD_CS);sdReady=SD.begin(SD_CS,SPI,10000000);if(!prefs.getBool("valid",false))calibrate();requestConfig();draw();}
+void loop(){if(Serial.available()){char cmd=Serial.read();if(cmd=='l')toggleLog();if(cmd=='c')calibrate();if(cmd=='r'){configured=false;requestConfig();}}while(radio.available())framing.feed(radio.read(),millis(),fromRadio);uint32_t now=millis();if((!configured&&now-lastRequest>15000)||(everFrame&&now-lastFrame>90000&&now-lastRequest>90000)){configured=false;requestConfig();}
+ if(configured&&now-lastHeartbeat>30000){const uint8_t hb[]={0x3a,0};sendFrame(hb,sizeof(hb));lastHeartbeat=now;}
+ static bool pressed=false;static uint32_t pressedAt=0;int x,y;if(touch(x,y)){if(!pressed&&now-pressedAt>250){pressed=true;pressedAt=now;if(y>=212){if(x<100){if(detail)detail=false;else page=(page+1)%max(1U,(orderCount+4)/5);}else if(x<247)toggleLog();else calibrate();}else if(!detail&&y>=70&&y<207){unsigned row=(y-70)/27;if(row<5&&page*5+row<orderCount){selected=order[page*5+row];detail=true;}}lastDraw=0;}}else pressed=false;
+ // BOOT short press changes page; long press starts/stops logging (useful without touch).
+ static uint32_t bootAt=0;static bool bootHeld=false;if(!digitalRead(0)){if(!bootHeld){bootHeld=true;bootAt=now;}}else if(bootHeld){bootHeld=false;if(now-bootAt>1000)toggleLog();else{detail=false;page=(page+1)%max(1U,(orderCount+4)/5);}lastDraw=0;}
+ if(logging&&now-lastFlush>2000){csv.flush();lastFlush=now;if(csv.getWriteError()){++logErrors;logging=false;csv.close();}}
+ if(!lastDraw||now-lastDraw>=1000){draw();lastDraw=now;}delay(2);}

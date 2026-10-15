@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760">
+<rect width="1200" height="760" fill="#f7f9fc"/>
+<g font-family="Arial, sans-serif" fill="#17243a">
+<text x="60" y="62" font-size="30" font-weight="bold">Tester Meshtastic — połączenie CYD ↔ Heltec Wireless Tracker</text>
+<text x="60" y="98" font-size="18">Schemat funkcjonalny — kieruj się napisami na płytkach, nie położeniem pinów na rysunku.</text>
+<rect x="60" y="155" width="390" height="385" rx="20" fill="#fff0aa" stroke="#cba62e" stroke-width="3"/>
+<text x="90" y="198" font-size="25" font-weight="bold">CYD ESP32-2432S028</text>
+<text x="90" y="230" font-size="18">Ekran i program testera</text>
+<rect x="86" y="257" width="310" height="70" rx="9" fill="white"/>
+<text x="103" y="284" font-size="19" font-weight="bold">P3: IO35 — RX</text>
+<text x="103" y="310" font-size="16">Wejście: dane z Meshtastic</text>
+<rect x="86" y="347" width="310" height="70" rx="9" fill="white"/>
+<text x="103" y="374" font-size="19" font-weight="bold">CN1: IO27 — TX</text>
+<text x="103" y="400" font-size="16">Wyjście: żądania API</text>
+<text x="103" y="474" font-size="21" font-weight="bold">GND — masa</text>
+<rect x="750" y="155" width="390" height="385" rx="20" fill="#dcecfb" stroke="#5084b8" stroke-width="3"/>
+<text x="778" y="198" font-size="23" font-weight="bold">Heltec Wireless Tracker</text>
+<text x="778" y="230" font-size="18">Meshtastic + wbudowane LoRa i GNSS</text>
+<rect x="790" y="257" width="325" height="70" rx="9" fill="white"/>
+<text x="807" y="284" font-size="19" font-weight="bold">GPIO6 — TX UART</text>
+<text x="807" y="310" font-size="16">Wyjście: pakiety i RSSI/SNR</text>
+<rect x="790" y="347" width="325" height="70" rx="9" fill="white"/>
+<text x="807" y="374" font-size="19" font-weight="bold">GPIO7 — RX UART</text>
+<text x="807" y="400" font-size="16">Wejście: żądania z CYD</text>
+<text x="807" y="474" font-size="21" font-weight="bold">GND — masa</text>
+<text x="505" y="266" font-size="17" fill="#147e59">TX Tracker → RX CYD</text>
+<path d="M790 292 H396" stroke="#147e59" stroke-width="6" fill="none"/>
+<path d="M410 283 L396 292 L410 301" stroke="#147e59" stroke-width="4" fill="none"/>
+<text x="505" y="356" font-size="17" fill="#c45f17">TX CYD → RX Tracker</text>
+<path d="M396 382 H790" stroke="#c45f17" stroke-width="6" fill="none"/>
+<path d="M776 373 L790 382 L776 391" stroke="#c45f17" stroke-width="4" fill="none"/>
+<path d="M350 467 H790" stroke="#28313e" stroke-width="6"/>
+<text x="534" y="451" font-size="17">Wspólna masa</text>
+<rect x="60" y="574" width="1080" height="138" rx="14" fill="white" stroke="#d0d8e4"/>
+<text x="84" y="607" font-size="20" font-weight="bold">Ustawienia Trackera w Meshtastic</text>
+<text x="84" y="638" font-size="18">Serial: Enabled • Mode PROTO • TXD 6 • RXD 7 • Baud 115200 • GPS włączony</text>
+<text x="84" y="670" font-size="18">Zasilanie: każda płytka z własnego USB. Nie łącz wyjść 3,3 V ani 5 V między płytkami.</text>
+<text x="84" y="697" font-size="17">Poziomy UART: 3,3 V. Tracker: antena LoRa oraz antena GNSS zgodnie z wersją płytki.</text>
+</g></svg>
