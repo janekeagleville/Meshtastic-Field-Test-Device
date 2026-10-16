@@ -11,6 +11,7 @@
 #include <SD.h>
 #include <Preferences.h>
 #include <TFT_eSPI.h>
+static std::vector<uint16_t> lastRows[240];
 #include <vector>
 #include <deque>
 #include <assert.h>
@@ -36,9 +37,9 @@ void Preferences::begin(const char*,bool){}uint16_t Preferences::getUShort(const
 void TFT_eSPI::invertDisplay(bool){}
 void TFT_eSPI::init(){}void TFT_eSPI::setRotation(int){}void TFT_eSPI::fillScreen(uint32_t){}void TFT_eSPI::setTextColor(uint32_t,uint32_t){}void TFT_eSPI::setTextDatum(uint8_t){}
 int TFT_eSPI::drawString(const String&,int,int,int){return 0;}int TFT_eSPI::drawString(const char*,int,int,int){return 0;}int TFT_eSPI::textWidth(const char*s,int){int w=0;for(;*s;s++)w+=(*s=='W'||*s=='M')?14:(*s=='i'||*s=='l'||*s=='.')?4:9;return w;}
-void TFT_eSPI::fillRect(int,int,int,int,uint32_t){}void TFT_eSPI::drawRect(int,int,int,int,uint32_t){}void TFT_eSPI::fillRoundRect(int,int,int,int,int,uint32_t){}void TFT_eSPI::drawRoundRect(int,int,int,int,int,uint32_t){}
-void TFT_eSPI::drawFastHLine(int,int,int,uint32_t){}void TFT_eSPI::drawLine(int,int,int,int,uint32_t){}void TFT_eSPI::fillCircle(int,int,int,uint32_t){}void TFT_eSPI::drawCircle(int,int,int,uint32_t){}
-void TFT_eSPI::drawArc(int32_t,int32_t,int32_t,int32_t,uint32_t,uint32_t,uint32_t,uint32_t,bool){}void TFT_eSPI::setSwapBytes(bool){}void TFT_eSPI::pushImage(int,int,int,int,uint16_t*){}
+void TFT_eSPI::drawPixel(int,int,uint32_t){}void TFT_eSPI::fillRect(int,int,int,int,uint32_t){}void TFT_eSPI::drawRect(int,int,int,int,uint32_t){}void TFT_eSPI::fillTriangle(int,int,int,int,int,int,uint32_t){}void TFT_eSPI::fillRoundRect(int,int,int,int,int,uint32_t){}void TFT_eSPI::drawRoundRect(int,int,int,int,int,uint32_t){}
+void TFT_eSPI::drawFastHLine(int,int,int,uint32_t){}void TFT_eSPI::drawFastVLine(int,int,int,uint32_t){}void TFT_eSPI::drawLine(int,int,int,int,uint32_t){}void TFT_eSPI::fillCircle(int,int,int,uint32_t){}void TFT_eSPI::drawCircle(int,int,int,uint32_t){}
+void TFT_eSPI::drawArc(int32_t,int32_t,int32_t,int32_t,uint32_t,uint32_t,uint32_t,uint32_t,bool){}void TFT_eSPI::setSwapBytes(bool){}void TFT_eSPI::pushImage(int x,int y,int w,int h,uint16_t* d){if(w>0&&h==1&&y>=46&&y<212&&w<=308){lastRows[y-46].assign(d,d+w);}}
 #include "../src/main.cpp"
 using Bytes=std::vector<uint8_t>;
 static void var(Bytes&b,uint64_t v){do{b.push_back((v&127)|(v>127?128:0));v>>=7;}while(v);}
@@ -46,8 +47,9 @@ static void vf(Bytes&b,unsigned t,uint64_t v){var(b,t<<3);var(b,v);}
 static void fx(Bytes&b,unsigned t,uint32_t v){var(b,(t<<3)|5);for(int i=0;i<4;i++)b.push_back(v>>(8*i));}
 static void nest(Bytes&b,unsigned t,const Bytes&a){var(b,(t<<3)|2);var(b,a.size());b.insert(b.end(),a.begin(),a.end());}
 static void pushFrame(const Bytes&fr){gRx.push_back(0x94);gRx.push_back(0xc3);gRx.push_back(fr.size()>>8);gRx.push_back(fr.size());for(auto c:fr)gRx.push_back(c);}
+static unsigned gChan=0;
 static void fromPacket(uint32_t from,uint32_t to,unsigned port,const Bytes&payload,uint32_t reqId,int rssi,float snr,bool hasRssi=true){
- Bytes d;vf(d,1,port);if(!payload.empty()||port==5)nest(d,2,payload);if(reqId)fx(d,6,reqId);Bytes pk;fx(pk,1,from);fx(pk,2,to);nest(pk,4,d);fx(pk,6,0x777000+gRand);
+ Bytes d;vf(d,1,port);if(!payload.empty()||port==5)nest(d,2,payload);if(reqId)fx(d,6,reqId);Bytes pk;fx(pk,1,from);fx(pk,2,to);if(gChan)vf(pk,3,gChan);nest(pk,4,d);fx(pk,6,0x777000+gRand);
  uint32_t sb;memcpy(&sb,&snr,4);fx(pk,8,sb);vf(pk,9,3);if(hasRssi)vf(pk,12,uint64_t(int64_t(rssi)));vf(pk,15,3);Bytes fr;nest(fr,2,pk);pushFrame(fr);}
 // Extract ToRadio.packet frames written to UART (ignore heartbeats / config requests).
 static std::vector<Bytes> txPackets(){std::vector<Bytes> out;size_t i=0;while(i+4<=gTx.size()){assert(gTx[i]==0x94&&gTx[i+1]==0xc3);size_t n=(gTx[i+2]<<8)|gTx[i+3];assert(i+4+n<=gTx.size());if(n&&gTx[i+4]==0x0a)out.push_back(Bytes(gTx.begin()+i+4,gTx.begin()+i+4+n));i+=4+n;}gTx.clear();return out;}
@@ -80,12 +82,12 @@ int main(){
   sdFiles.push_back(std::string("/")+stem+".csv");sdFiles.push_back(std::string("/")+stem+"-2.csv");
   toggleLog();assert(logging);assert(sdFiles.back()==std::string("/")+stem+"-3.csv"||sdFiles.back().find("-3.csv")!=std::string::npos||sdFiles.back().find(".csv")!=std::string::npos);toggleLog();
   // lista: zapis calego ruchu
-  detail=false;sdFiles.clear();toggleLog();assert(logging&&logNode==0&&sdFiles[0].find("/SIEC_")==0);toggleLog();
+  detail=false;sdFiles.clear();toggleLog();assert(logging&&logNode==0&&sdFiles[0].find("/ALL_")==0);toggleLog();
   // brak SD: komunikat, brak logowania, ponowna proba montowania
-  sdReady=false;sdPresent=false;detail=true;toggleLog();assert(!logging&&std::string(uiMsg)=="BRAK SD"&&millis()<uiMsgUntil);
+  sdReady=false;sdPresent=false;detail=true;toggleLog();assert(!logging&&std::string(uiMsg)=="NO SD"&&millis()<uiMsgUntil);
   sdPresent=true;uiMsgUntil=0;toggleLog();assert(logging&&sdReady);toggleLog();
   // bez czasu: nazwa zastepcza, bez dwukropka
-  clkEpoch=0;logStem(0x45126738,stem,sizeof stem);assert(std::string(stem).find("mundek_Bemowo_BRAK-CZASU_")==0);
+  clkEpoch=0;logStem(0x45126738,stem,sizeof stem);assert(std::string(stem).find("mundek_Bemowo_NO-TIME_")==0);
   // brak dlugich nazw (FAT 8.3): plik zapasowy LOGnnnnn.csv
   setenv("SD_NOLFN","1",1);sdFiles.clear();clockSeen(1791650820);toggleLog();assert(logging&&sdFiles.back().find("/LOG")==0);toggleLog();unsetenv("SD_NOLFN");
   // filtr: loguje tylko pakiety wybranego node'a
@@ -126,4 +128,53 @@ int main(){
  probe.on=false;run(gNow+PROBE_INTERVAL_MS*3);assert(txPackets().empty());probe.on=true;probe.nextAt=gNow;run(gNow+10);assert(txPackets().size()==1);
  // Leaving the detail view stops probing.
  detail=false;probe.pending=false;probe.nextAt=gNow;run(gNow+PROBE_INTERVAL_MS*2);assert(txPackets().empty());
+ // pulpit: pelne dane i dlugie ciagi nie psuja pamieci; przelaczanie ekranow
+ {home=true;detail=false;dev.has=true;dev.battery=101;dev.voltage=4.18f;dev.chUtil=63;dev.airTx=2.5f;dev.uptime=100000;devAt=millis();lora.has=true;lora.usePreset=true;lora.region=1;strlcpy(chans[0].name,"A-very-long-channel-name-for-test",sizeof chans[0].name);chans[0].role=1;myId=0x1234abcd;
+  {uint8_t t[200];memset(t,'x',sizeof t);chatAdd(0xAAAA,0,t,sizeof t);}draw();
+  dev.battery=15;lora.usePreset=false;lora.bw=0;draw();lora.has=false;dev=mesh::DeviceMetrics{};draw();home=false;draw();home=true;}
+ // GPS Trackera: bez konfiguracji brak wysylki; po konfiguracji ON/OFF wysyla set_config i odswieza dane po restarcie
+ {gTx.clear();posCfg=mesh::PosCfg{};gpsSet(1);assert(txPackets().empty());
+  Bytes pos;vf(pos,1,120);vf(pos,13,1);Bytes cf;nest(cf,2,pos);Bytes fr;nest(fr,5,cf);pushFrame(fr);run(gNow+50);assert(posCfg.has&&posCfg.mode==1);
+  configured=true;gpsSet(0);auto t0=txPackets();assert(t0.size()==1&&posCfg.mode==0&&gpsAt);mesh::Packet gp;assert(mesh::packet(t0[0].data()+2,t0[0].size()-2,gp)&&gp.port==6&&gp.to==myId);
+  uiScreen=-1;draw();run(gNow+13000);assert(!configured);gTx.clear();run(gNow+16000);assert(!gTx.empty());gTx.clear();}
+ // czat: kanaly, liczniki nowych, czytnik, zawijanie, pierscien, DM
+ {msgCnt=0;msgHead=0;chatCount=0;chatScr=false;home=true;for(auto&c:chans)c=mesh::ChannelInfo{};chans[0].role=1;strlcpy(chans[0].name,"LongFast",sizeof chans[0].name);chans[1].role=2;strlcpy(chans[1].name,"Zażółć",sizeof chans[1].name);lora.has=true;
+  gChan=0;fromPacket(0xAAAA,0xFFFFFFFF,1,Bytes{'a','1'},0,-80,7);gChan=1;fromPacket(0xBBBB,0xFFFFFFFF,1,Bytes{'b','1'},0,-80,7);fromPacket(0xBBBB,0xFFFFFFFF,1,Bytes{'b','2'},0,-80,7);gChan=0;
+  fromPacket(0xCCCC,myId,1,Bytes{'d','m'},0,-80,7);fromPacket(0xDDDD,0x5555,1,Bytes{'x'},0,-80,7);run(gNow+100);
+  assert(msgCnt==4&&unreadN(0)==1&&unreadN(1)==2&&unreadN(8)==1&&chatTotal(0)==1);
+  unsigned o[9];assert(chList(o)==3&&o[0]==0&&o[1]==1&&o[2]==8);draw();
+  chatTap(146+12);assert(chatScr&&chatCh==1&&unreadN(1)==0&&unreadN(0)==1);draw();   // wiersz 2 = kanal 1
+  gChan=1;fromPacket(0xBBBB,0xFFFFFFFF,1,Bytes{'b','3'},0,-80,7);run(gNow+100);assert(unreadN(1)==0&&msgs[(msgHead+msgCnt-1)%MSGN].fresh);draw();
+  leaveSub();assert(!chatScr&&home&&!msgs[(msgHead+msgCnt-1)%MSGN].fresh);
+  chatTap(135);assert(chatScr&&chatCh==1);leaveSub();   // naglowek kafelka: kanal z najnowsza wiadomoscia
+  // dlugie wiadomosci, polskie znaki, brak spacji, 3 strony
+  gChan=0;for(unsigned i=0;i<12;i++){std::string t=i%3==0?"Zażółć gęślą jaźń. Bardzo długa wiadomość która musi się zawinąć w dwóch wierszach i jeszcze trochę dalej ponad limit":i%3==1?std::string(150,'W'):"ok";Bytes b(t.begin(),t.end());fromPacket(0xAAAA,0xFFFFFFFF,1,b,0,-80,7);}run(gNow+100);
+  assert(msgCnt==17);openChat(0);for(unsigned pg=0;pg<5;pg++){chatPage=pg;uiScreen=-1;draw();}chatPage=1;draw();leaveSub();
+  // pierscien: ponad 40 wiadomosci nie psuje pamieci, najstarsze znikaja
+  for(unsigned i=0;i<60;i++)fromPacket(0xAAAA,0xFFFFFFFF,1,Bytes{'z'},0,-80,7);run(gNow+100);assert(msgCnt==MSGN&&chatCount>=60);
+  gChan=3;fromPacket(0xAAAA,0xFFFFFFFF,1,Bytes{'q'},0,-80,7);gChan=9;fromPacket(0xAAAA,0xFFFFFFFF,1,Bytes{'q'},0,-80,7);gChan=0;run(gNow+100);
+  {uint8_t e[1]={0};chatAdd(1,0,e,0);chatAdd(1,0,(const uint8_t*)"\xF0\x9F\x98\x80",4);assert(strcmp(msgs[(msgHead+msgCnt-1)%MSGN].text,"(no text)")==0);}
+  home=true;chatScr=false;draw();msgCnt=0;chatCount=0;for(auto&c:chans)c=mesh::ChannelInfo{};draw();chatTap(160);assert(!chatScr);}
+ // widmo: ekran z danymi, bez danych, wszystkie okna; dotyk-ekwiwalent przelaczen
+ {specScr=true;home=false;for(unsigned i=0;i<500;i++)specRing.add(millis()-i*500,-80-int(i%40),float(int(i%15)-6));for(unsigned i=0;i<400;i++)utilRing.add(float(i%90));dev.has=true;dev.chUtil=40;
+  for(specWin=0;specWin<3;specWin++){uiScreen=-1;draw();}specWin=0;specRing=spec::SampleRing{};for(unsigned i=0;i<20;i++)specRing.add(millis()-i*500,-45,8);uiScreen=-1;draw();for(unsigned i=0;i<30;i++)specRing.add(millis()-i*700,-100-int(i%5),float(int(i%7)-3));uiScreen=-1;draw();dev.has=false;specRing=spec::SampleRing{};utilRing=spec::UtilRing{};uiScreen=-1;draw();specScr=false;home=true;}
+ // mapa: wezly z pozycjami (w mapie, poza mapa, bez pozycji), wybor, dluga lista i strony
+ {for(auto&x:nodes)x=Node{};auto E7=[](double v){return int32_t(v*1e7);};ownPosition.lat=E7(52.2297);ownPosition.lon=E7(21.0122);ownPosition.hasLat=ownPosition.hasLon=true;
+  for(unsigned i=0;i<40;i++){Node&n=nodes[i];n.id=0x1000+i;snprintf(n.name,sizeof n.name,"Wezel %u zazolc gesla",i);n.hasPos=true;n.lat=E7(51.3+i*0.05);n.lon=E7(19.5+i*0.08);if(i%3){n.count=5;n.rssi=-100-i;n.snr=1;n.last=millis();}}
+  nodes[50].id=0x2000;nodes[50].hasPos=true;nodes[50].lat=E7(52.52);nodes[50].lon=E7(13.4);nodes[51].id=0x2001;
+  mapBuild();assert(mapCount>0&&mapCount<40&&mapOutside>=1);
+  for(unsigned i=1;i<mapCount;i++){const Node&a=nodes[mapList[i-1].idx],&b=nodes[mapList[i].idx];assert(!(a.count==0&&b.count>0));}   // sluchane najpierw
+  mapScr=true;home=false;specScr=false;mapSelId=nodes[mapList[mapCount-1].idx].id;uiScreen=-1;draw();assert(mapSel==int(mapCount)-1);
+  mapPage=mapPages-1;draw();mapPage=99;draw();assert(mapPage<mapPages);mapSelId=0xdead;draw();assert(mapSel==-1);
+  // zoom 2x..6x: srodek na skrajach mapy i poza nia (bez odczytu poza mapImg), wybrany wezel, powrot do 1x
+  mapScr=true;mapSel=-1;mapSelId=nodes[mapList[0].idx].id;
+  for(int zi=1;zi<ZN;zi++){const int z=ZL[zi];mapZoom=z;const float cs[][2]={{-1,-1},{0,0},{MAP_W,MAP_H},{MAP_W/2.f,0},{0,MAP_H},{80,83}};for(auto&c:cs){mapCX=c[0];mapCY=c[1];uiScreen=-1;draw();int vx,vy;mapView(vx,vy);assert(z<MAPW_ZOOM_MIN||(vx>=MAPW_X0&&vy>=MAPW_Y0&&vx+(308*mapU()+z-1)/z<=MAPW_X0+MAPW_W&&vy+(166*mapU()+z-1)/z<=MAPW_Y0+MAPW_H));assert(vx>=0&&vy>=0&&vx+(308*mapU()+z-1)/z<=int(MAP_W)*mapU()&&vy+(166*mapU()+z-1)/z<=int(MAP_H)*mapU());}}
+  // zoom maks.: obraz musi pochodzic z mapy Warszawy (piksel 1:1), zoom 2..5: z mapHi
+  {mapZoom=MAP_ZOOM_MAX;mapCX=21.0122f;float fx,fy;geo::projectF(522297000,210122000,fx,fy);mapCX=fx;mapCY=fy;uiScreen=-1;draw();int vx,vy;mapView(vx,vy);
+   for(int j:{0,80,165})for(int i:{0,150,307}){unsigned id=unsigned(vy+j-MAPW_Y0)*MAPW_W+unsigned(vx+i-MAPW_X0);uint8_t b=pgm_read_byte(mapW+(id>>1));assert(lastRows[j].size()>unsigned(i)&&lastRows[j][i]==pgm_read_word(mapWPal+((id&1)?(b>>4):(b&15))));}
+   if(getenv("DUMPMAP")){FILE*f=fopen("/tmp/claude-0/z6.raw","wb");for(int j=0;j<166;j++)fwrite(lastRows[j].data(),2,308,f);fclose(f);}
+   mapZoom=3;mapCX=fx;mapCY=fy;uiScreen=-1;draw();mapView(vx,vy);
+   if(getenv("DUMPMAP")){FILE*f=fopen("/tmp/claude-0/z3.raw","wb");for(int j=0;j<166;j++)fwrite(lastRows[j].data(),2,308,f);fclose(f);}{unsigned id=unsigned(vy+(80*4)/3)*MAPH_W+unsigned(vx+(150*4)/3);uint8_t b=pgm_read_byte(mapHi+(id>>1));assert(lastRows[80][150]==pgm_read_word(mapPal+((id&1)?(b>>4):(b&15))));}}
+  mapZoom=1;mapCX=-1;uiScreen=-1;draw();
+  for(auto&x:nodes)x=Node{};mapScr=true;uiScreen=-1;draw();mapScr=false;home=true;}
  puts("PASS: probe sent after selection, ACK->OK+RTT+signal sample, ignore foreign ACK, timeout, local error, NAK, pause, leave view");}

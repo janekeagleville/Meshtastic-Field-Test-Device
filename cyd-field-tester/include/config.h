@@ -3,7 +3,7 @@ constexpr int RADIO_RX=35, RADIO_TX=27;
 constexpr unsigned RADIO_BAUD=115200;
 constexpr int BACKLIGHT=21, SD_CS=5;
 constexpr int TOUCH_CS=33, TOUCH_CLK=25, TOUCH_MOSI=32, TOUCH_MISO=39;
-constexpr unsigned MAX_NODES=64, HISTORY=48;
+constexpr unsigned MAX_NODES=128, HISTORY=48;
 // Skale wskaznikow i progi oceny czytelnosci odbioru (dla ostatniego odcinka radiowego).
 constexpr int GAUGE_MIN=-130, GAUGE_MAX=-30;   // zakres wskaznika RSSI [dBm]
 constexpr int SNR_MIN=-20, SNR_MAX=15;         // zakres paska SNR [dB]

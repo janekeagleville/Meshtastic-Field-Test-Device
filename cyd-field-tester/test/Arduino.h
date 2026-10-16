@@ -8,6 +8,7 @@
 #include <algorithm>
 #define PROGMEM
 #define pgm_read_word(p) (*(p))
+#define pgm_read_byte(p) (*(p))
 #define constrain(a,lo,hi) ((a)<(lo)?(lo):((a)>(hi)?(hi):(a)))
 using std::min;
 using std::max;

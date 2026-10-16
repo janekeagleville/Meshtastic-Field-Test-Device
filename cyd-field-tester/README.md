@@ -6,13 +6,13 @@ Tracker zachowuje standardowy Meshtastic oraz GPS; CYD jest klientem API i ekran
 ## Funkcje
 
 - Ekran startowy MESHTASTIC MAZOWSZE FIELD TESTER (include/splash.h, RGB565 320x240) i spójny ciemnozielony interfejs: nagłówek, pasek GPS, panele, wskaźnik RSSI, kropki przekazań, wykres.
-- Znacznik czytelności odbioru: CZYTELNY / GRANICZNY / NIECZYTELNY (progi w include/config.h).
+- Znacznik czytelności odbioru: READABLE / MARGINAL / UNREADABLE (progi w include/config.h).
 - Lista do 64 nadawców z pomiarami odebranymi podczas bieżącej sesji, najnowsze na górze.
 - RSSI (dBm), SNR (dB), czas od odbioru; dotknięcie wiersza otwiera szczegóły.
 - W szczegółach: licznik, średnia/minimum/maksimum RSSI i wykres 48 ostatnich próbek.
 - Droga pakietu: bezpośrednia, przekazana lub nieustalona. Zerowy/nieobecny hop_start jest celowo traktowany jako nieustalony.
 - Ostatnia znana pozycja lokalnego Trackera, niezależnie od pozycji odległych węzłów.
-- Zapis na microSD: przycisk ZAPIS na ekranie pracy tworzy plik `Nazwa-noda_DDMMYY_HH-MM-SS.csv`.
+- Zapis na microSD: przycisk LOG na ekranie pracy tworzy plik `Nazwa-noda_DDMMYY_HH-MM-SS.csv`.
 - Ponowienie połączenia API, heartbeat i kalibracja dotyku przechowywana w pamięci CYD.
 
 ## Ekrany
@@ -77,10 +77,10 @@ Kalibracja pozostaje zapisana po wyłączeniu.
 - DALEJ: następna strona listy.
 - Dotknięcie węzła: ekran szczegółów i wykres RSSI.
 - LISTA: powrót do listy.
-- ZAPIS (dół ekranu pracy, środkowy klawisz): tworzy nowy plik i zapisuje pakiety wybranego noda; podczas zapisu przycisk pokazuje STOP i liczbę wierszy. Z listy węzłów zapisuje wszystkie.
+- LOG (dół ekranu pracy, środkowy klawisz): tworzy nowy plik i zapisuje pakiety wybranego noda; podczas zapisu przycisk pokazuje STOP i liczbę wierszy. Z listy węzłów zapisuje wszystkie.
 - STOP i licznik: zakończenie zapisu i zamknięcie pliku.
 - KAL: powtórzenie kalibracji.
-- BRAK SD: karta nie została zamontowana; dotknięcie ponawia próbę.
+- NO SD: karta nie została zamontowana; dotknięcie ponawia próbę.
 - BLAD SD: zapis lub otwarcie pliku nie powiodły się; stan jest też raportowany przez USB.
 - Krótki przycisk BOOT: następna strona listy / wyjście ze szczegółów.
 - Długi BOOT (>1 s): start/stop zapisu.
@@ -92,10 +92,37 @@ Dane są opróżniane z bufora co 2 s; nagłe odłączenie zasilania może utrac
 SPI ekranu, SD i dotyku są rozdzielone: TFT HSPI (12/13/14/15), SD VSPI (19/23/18/5),
 a XPT2046 obsługiwany programowo (MISO39/MOSI32/CLK25/CS33).
 
+## Pulpit (ekran startowy)
+Sześć kafelków ze statusem węzła, na podstawie danych z Trackera przez UART: BATTERY (% i napięcie, USB = zasilanie zewnętrzne),
+NODES (słyszane / aktywne w 15 min / znane), RADIO (preset, częstotliwość środkowa, SF i BW), CHANNEL (channel utilization, Tx airtime, nazwa kanału),
+CHAT (lista kanałów z liczbą nowych wiadomości, patrz niżej), TRACKER (pełna nazwa i ID, czas pracy, baud, ramki).
+
+**Czat.** Kafelek CHAT pokazuje kanały skonfigurowane na Trackerze (numer, nazwa, liczba nieprzeczytanych; DM = wiadomości wysłane bezpośrednio do Trackera) oraz łączną liczbę nowych w rogu. Dotknięcie wiersza kanału otwiera okno z jego wiadomościami: najnowsze na górze, 4 na stronie, nowe oznaczone pomarańczową kropką, nadawca i czas od odbioru. Prawy przycisk (OLDER) lub dotknięcie dolnej/górnej połowy ekranu przewija strony, dotknięcie nagłówka kafelka otwiera kanał z najnowszą wiadomością, DASHBOARD wraca. Wiadomości są tylko w pamięci RAM (ostatnie 40, po restarcie znikają), tekst jest przycinany do 100 znaków, polskie litery wyświetlają się bez ogonków.
+Klawisze: NODES ↔ dashboard (lewy), LOG (środek, na pulpicie zapisuje cały ruch), DASHBOARD / CAL (prawy; na pulpicie to kalibracja dotyku).
+Bateria i zajętość kanału pojawiają się po pierwszej telemetrii Trackera (zwykle do kilkunastu minut; interwał ustawia się w module Telemetry).
+Częstotliwość wyliczana jest dla regionów US, EU433, EU868 i ANZ; dla innych pokazana jest nazwa regionu.
+
+## Mapa nodów (ekran „MAP”)
+Wejście: dotknij kafelka NODES na pulpicie. Tło to mapa samego województwa mazowieckiego (granice, powiaty, Wisła/Bug, główne miasta, skala 50 km),
+na niej węzły z pozycją: kolor jak w liście (zielony/bursztyn/czerwony wg jakości odbioru, szary = znany, jeszcze niesłyszany), biały pierścień = Tracker (własny GPS).
+Po prawej lista (najpierw słyszane, najświeższe; potem najbliższe) z odległością od Trackera. Dotknij punkt lub wiersz = zaznaczenie (nazwa na mapie),
+drugie dotknięcie = ekran pracy tego noda. Prawy klawisz przewija strony listy. Przyciski „+” / „-” w lewym dolnym rogu mapy zmieniają powiększenie: 1×, 2×, 3×, 4×, 6×, 8×, 12× (widok na pełną szerokość, bez listy; dotknięcie pustego miejsca przesuwa środek widoku, prawy klawisz „ZOOM OUT” wraca do 1×). Od 6× mapa zmienia się na szczegółową mapę Warszawy i okolic (od Mszczonowa po Mińsk Maz., od Góry Kalwarii po Różan i Pułtusk): dzielnice Warszawy, powiaty, Wisła, Narew, Bug, Wkra, Bzura, drogi krajowe i europejskie, linie kolejowe, obszary zabudowane, lotniska Chopina i Modlin oraz ok. 50 miejscowości (`include/mapwaw.h`, 0,14 km/piksel, generator `tools/gen_map_warsaw.py`, ok. 280 kB flasha; dane Natural Earth i granice dzielnic). Mapa nie zawiera ulic — takie dane nie były dostępne. Po powiększeniu krzyżak ze strzałkami w prawym dolnym rogu przesuwa widok o 60 pikseli (widok na pełną szerokość, bez listy; dotknięcie pustego miejsca przesuwa środek widoku, prawy klawisz „ZOOM OUT” wraca do 1×). Węzły poza Mazowszem nie są rysowane („poza mapa: N”).
+Pozycje pochodzą z bazy węzłów Trackera i pakietów POSITION; węzły zwykle wysyłają je co kilkanaście minut, a niektóre nie wysyłają wcale lub mają ją zaokrągloną.
+Tło: `include/mapdata.h` (RGB565 160×166 + maska granicy, widok 1×, generator `tools/gen_map.py`) oraz `include/maphires.h` (640×664, 16 kolorów, 4 bit/piksel, ok. 0,4 km/piksel, używana przy powiększeniu 2×–6×, generator `tools/gen_map_hi.py`; zajmuje ok. 210 kB flasha). Dane: granice [ppatrzyk/polska-geojson](https://github.com/ppatrzyk/polska-geojson), rzeki Natural Earth (domena publiczna).
+Skala ok. 1,7 km/piksel — to mapa poglądowa, nie nawigacyjna.
+
+## Widmo i szum (ekran „NOISE”)
+Wejście: dotknij kafelka RADIO lub CHANNEL na pulpicie. Prawy klawisz (lub dotknięcie wykresu) zmienia przedział czasu (TIME 1m / 10m / 1h), lewy wraca na pulpit.
+Meshtastic nie udostępnia pomiaru radia, więc ekran pokazuje **estymaty z odebranych pakietów**, a nie prawdziwe widmo pasma:
+- NOISE = RSSI − SNR odebranego pakietu (dBm); FLOOR = 10. percentyl szumu w oknie; wykres: turkus = szum (przerywana linia = FLOOR, białe kropki = odczyty), bursztyn = RSSI sygnału. Szum da się oszacować tylko ze słabszych pakietów: przy bardzo silnym sygnale (np. węzeł obok, RSSI około −45 dBm) SNR się nasyca, wynik RSSI − SNR jest nierealny i jest odrzucany (kafelki NOISE i FLOOR pokazują „--”, a na wykresie jest podpowiedź).
+- PKT/MIN = odebrane pakiety z ostatnich 60 s; CH UTIL i AIR TX = zajętość kanału i airtime z telemetrii Trackera, pasek „CHANNEL” to jej historia (próbka co 10 s).
+- Bez ruchu w sieci nie ma pakietów, więc nie ma też szumu. CH UTIL i AIR TX odświeżają się tak rzadko, jak Tracker wysyła telemetrię.
+- Prawdziwe widmo (skan częstotliwości, pomiar szumu w ciszy) wymaga dostępu do układu SX1262, czyli własnego firmware zamiast Meshtastic albo dodatkowego modułu radiowego.
+
 ## Nazwy plików i czas
 Nazwa: `<nazwa noda>_DDMMYY_HH-MM-SS.csv`, czas lokalny (Polska, CET/CEST). System FAT nie dopuszcza dwukropka w nazwie, więc godzina ma myślniki.
-Płytka nie ma zegara: czas pochodzi z pakietów odebranych przez Tracker (wymaga ważnego czasu, np. po złapaniu GPS). Bez czasu plik nazywa się `Nazwa_BRAK-CZASU_001.csv`.
-Karta musi być FAT32. Gdy firmware SD nie obsługuje długich nazw, powstaje `/LOGnnnnn.csv` (komunikat KROTKA NAZWA). Komunikat BRAK SD: sprawdź kartę i ponów ZAPIS.
+Płytka nie ma zegara: czas pochodzi z pakietów odebranych przez Tracker (wymaga ważnego czasu, np. po złapaniu GPS). Bez czasu plik nazywa się `Name_NO-TIME_001.csv`.
+Karta musi być FAT32. Gdy firmware SD nie obsługuje długich nazw, powstaje `/LOGnnnnn.csv` (komunikat 8.3 NAME). Komunikat NO SD: sprawdź kartę i ponów LOG.
 
 ## Format CSV
 
@@ -125,6 +152,8 @@ Współrzędne nie są pobierane z wiadomości odległego nadawcy. Przed wyjści
 że Tracker ma aktualną pozycję z GPS (position_source=2), a gps_age_s jest rozsądne.
 Gdy GPS przestanie dostarczać aktualizacji, zachowywana jest ostatnia pozycja i rośnie jej wiek.
 Napis CACHE oznacza pozycję pobraną podczas początkowego odczytu bazy, o niepewnej aktualności.
+
+**Przyciski GPS.** W nagłówku, na lewo od pola API, jest ikona satelity z przyciskami ON i OFF. Wypełniony przycisk pokazuje tryb GPS zgłoszony przez Trackera (Config.position.gps_mode). Dotknięcie wysyła do Trackera lokalną zmianę konfiguracji (pozostałe ustawienia pozycji zostają bez zmian). Tracker zapisuje ją i restartuje się, a po kilkunastu sekundach CYD odczytuje dane od nowa. Pasek GPS pokazuje wtedy „GPS is switched OFF”. Przyciski działają dopiero po połączeniu (API OK) i po odczytaniu konfiguracji pozycji.
 
 ## Granice pomiarów
 
@@ -162,3 +191,6 @@ c++ -std=c++11 -I include test/protocol_test.cpp -o protocol-test
 - https://resource.heltec.cn/download/Wireless_Tracker/Wireless_Tracker%20_1.1.pdf
 - https://resource.heltec.cn/download/Wireless_Tracker_V2/Wireless_Tracker_v2_Datasheet/Wireless%20Tracker%20v2.pdf
 - https://github.com/Bodmer/TFT_eSPI
+
+## Język interfejsu
+Interfejs CYD i aplikacji iPhone jest po angielsku (READABLE / MARGINAL / UNREADABLE, HOPS, NOISE, CH UTIL, AIR TX itd.). Komentarze w kodzie i ten README są po polsku.
