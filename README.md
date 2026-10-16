@@ -13,13 +13,10 @@ The Tracker keeps standard Meshtastic firmware and GPS; the CYD is an API client
 
 Case for 3D print https://makerworld.com/pl/models/3030722-internet-connection-monitor-24h#profileId-3406236
 
-<img width="416" height="314" alt="image" src="https://github.com/user-attachments/assets/e6ed3ab3-fb9a-4ad6-a7ce-a0fa1383bd65" />
+<img width="391" height="282" alt="image" src="https://github.com/user-attachments/assets/ed85cc33-e814-436c-91b7-0ea3fb1e3002" />
+<img width="369" height="271" alt="image" src="https://github.com/user-attachments/assets/61ff0d7a-7b25-4b89-8cff-9ba70823c27c" />
+<img width="379" height="283" alt="image" src="https://github.com/user-attachments/assets/a25d8aaa-51ac-4488-b13d-e5288336658c" />
 
-<img width="397" height="299" alt="image" src="https://github.com/user-attachments/assets/ef466cb5-5ca6-4a77-9c7e-31899a0b767b" />
-
-<img width="379" height="287" alt="image" src="https://github.com/user-attachments/assets/59d39e44-df7e-48ae-be44-5c34eaeed49e" />
-
-<img width="378" height="283" alt="image" src="https://github.com/user-attachments/assets/5d36715a-448c-4e0b-8359-c7227c7d1bf7" />
 
 
 ## Features
