@@ -15,11 +15,12 @@ Case for 3D print https://makerworld.com/pl/models/3030722-internet-connection-m
 
 <img width="416" height="314" alt="image" src="https://github.com/user-attachments/assets/e6ed3ab3-fb9a-4ad6-a7ce-a0fa1383bd65" />
 
+<img width="397" height="299" alt="image" src="https://github.com/user-attachments/assets/ef466cb5-5ca6-4a77-9c7e-31899a0b767b" />
 
-Screens
-https://zapodaj.net/plik-qDZE2JrpzA
-https://zapodaj.net/plik-vt0ugeca8Z
-https://zapodaj.net/plik-S9y9H4pFzt
+<img width="379" height="287" alt="image" src="https://github.com/user-attachments/assets/59d39e44-df7e-48ae-be44-5c34eaeed49e" />
+
+<img width="378" height="283" alt="image" src="https://github.com/user-attachments/assets/5d36715a-448c-4e0b-8359-c7227c7d1bf7" />
+
 
 ## Features
 
